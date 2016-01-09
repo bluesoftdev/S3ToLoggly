@@ -2,20 +2,24 @@
 
 var aws = require('aws-sdk')
 var s3 = new aws.S3({apiVersion: '2006-03-01'})
-
+var zlib = require('zlib')
+var csv = require('fast-csv')
 var _ = require('lodash')
 , async = require('async')
 , request = require('request')
 , Transform = require('stream').Transform
-, csv = require('csv-streamify')
-, JSONStream = require('JSONStream')
+, moment = require('moment')
 
 // Set the tag 'loggly-customer-token'to set Loggly customer token on the S3 bucket.
 // Set the tag 'loggly-tag' to set Loggly tag on the S3 bucket.
 
-LOGGLY_URL_BASE = 'https://logs-01.loggly.com/bulk/'
+LOGGLY_URL_BASE = 'https://logs-01.loggly.com/inputs/'
 BUCKET_LOGGLY_TOKEN_NAME = 'loggly-customer-token'
 BUCKET_LOGGLY_TAG_NAME = 'loggly-tag'
+
+// This REGEX is applied to the key and if it matches, the domain name, from the prefix, 
+// will be added as a tag to the log data.
+DOMAIN_TAG_REGEX = /^logs\/(.*)\/.*$/
 
 // Used if no S3 bucket tag doesn't contain customer token.
 // Note: You either need to specify a cutomer token in this script or via the S3 bucket tag else an error is logged.
@@ -36,6 +40,103 @@ else {
     console.log('Loading S3ToLoggly, NO default Loggly endpoint, must be set in bucket tag ' + BUCKET_LOGGLY_TOKEN_NAME );
 }
 
+/**
+ * Extract file contents.
+ * @param buffer
+ * @param callback
+ * @returns {*} Buffer data - archive contents.
+ */
+function gunzip(buffer, callback) {
+    zlib.gunzip(buffer, callback);
+}
+
+var csvCFParserConfig = {
+        comment: "#",
+        delimiter: '\t',
+        headers: [
+            'date',
+            'time',
+            'ip',
+            'method',
+            'host',
+            'uri',
+            'status',
+            'referer',
+            'user-agent',
+            'query',
+            'cookie',
+            'protocol',
+            'object-size',
+            'bytes-sent',
+            'time-taken-ms',
+            'ssl-protocol',
+            'ssl-cipher',
+            'x-edge-result-type',
+            'x-edge-request-id',
+            'x-host-header',
+            'x-forwarded-for',
+            'x-edge-location',
+            'x-edge-response-result-type'
+        ]
+    }
+var csvS3ParserConfig = {
+    delimiter: ' ',
+    headers: [
+      'bucket-owner-id',
+      'bucket',
+      'time',
+      'time-zone',
+      'requestor-ip',
+      'requestor-id',
+      'request-id',
+      'operation',
+      'key',
+      'request-uri',
+      'http-status',
+      'error-code',
+      'bytes-sent',
+      'object-size',
+      'total-time-ms',
+      'turn-around-time-ms',
+      'referrer',
+      'user-agent',
+      'version-id'
+    ]
+}
+function replaceDashesWithNulls(data) {
+    for(var key in data) {
+        if (data.hasOwnProperty(key)) {
+            if (data[key] == '-') {
+                delete data[key]
+            }
+        }
+    }
+    return data
+}
+var transformS3 = function(data) {
+    data = replaceDashesWithNulls(data)
+    // parse the time and timezone parts and convert to one date
+    var timeParts = data['time'].substring(1)
+    var timeZone = data['time-zone'].substring(0,data['time-zone'].length - 1)
+    var timeStr = timeParts + ' ' + timeZone
+    data['time'] = moment(timeStr,'DD/MMM/YYYY:HH:mm:ss Z').format()
+    data['time-zone'] = null
+    if (data['http-status']) data['http-status'] = parseInt(data['http-status'],10);
+    if (data['bytes-sent']) data['bytes-sent'] = parseInt(data['bytes-sent'],10);
+    if (data['object-size']) data['object-size'] = parseInt(data['object-size'],10);
+    if (data['total-time-ms']) data['total-time-ms'] = parseInt(data['total-time-ms'],10);
+    if (data['turn-around-time-ms']) data['turn-around-time-ms'] = parseInt(data['turn-around-time-ms'],10);
+
+    return data
+}
+var transformCF = function(data) {
+    data = replaceDashesWithNulls(data)
+    // Convert some fields to integer.
+    data["time-taken-ms"] = parseInt(data["time-taken-ms"], 10);
+    data["object-size"] = parseInt(data["object-size"], 10);
+    data["bytes-sent"] = parseInt(data["bytes-sent"], 10);
+    return data;
+}
 exports.handler = function(event, context) {
 
     // console.log('Received event');
@@ -43,6 +144,7 @@ exports.handler = function(event, context) {
     var bucket = event.Records[0].s3.bucket.name;
     var key  = event.Records[0].s3.object.key;
     var size = event.Records[0].s3.object.size;
+    var domainTag = key.match(DOMAIN_TAG_REGEX)
 
     if ( size == 0 ) {
         console.log('S3ToLoggly skipping object of size zero')
@@ -68,6 +170,11 @@ exports.handler = function(event, context) {
                             
                             if ( s3tag[BUCKET_LOGGLY_TAG_NAME] ) {
                                 LOGGLY_URL += '/tag/' + s3tag[BUCKET_LOGGLY_TAG_NAME];
+                                if (domainTag) {
+                                    LOGGLY_URL += ',' + domainTag[1]
+                                }
+                            } else if (domainTag) {
+                                LOGGLY_URL += '/tag/' + domainTag[1]
                             }
                         } 
                         else {
@@ -88,15 +195,53 @@ exports.handler = function(event, context) {
                 }, next);
             },
 
+            function gunzipStep(data, next) {
+                if (key.match(/^.*\.gz$/)) {
+                  console.log('gunzipping content')
+                  gunzip(data.Body,next)
+                } else {
+                  next(null,data.Body)
+                }
+            },
+
             function upload(data, next) {
-                
+
                 // Stream the logfile to loggly.
                 var bufferStream = new Transform();
-                bufferStream.push(data.Body)
+                bufferStream.push(data)
                 bufferStream.end()
                 console.log( 'Using Loggly endpoint: ' + LOGGLY_URL )
+                var csvParser = csv(csvS3ParserConfig)
+                var transform = transformS3
+                if (key.match(/^.*\.gz$/)) {
+                    csvParser = csv(csvCFParserConfig)
+                    transform = transformCF
+                }
 
-                bufferStream.pipe(request.post(LOGGLY_URL)).on('error', function(err) {next(err)}).on('end', function() {next()})
+                csvParser.transform(function(data,next) {
+                    data = transform(data)
+                    request.post({
+                        url: LOGGLY_URL,
+                        headers: {
+                          "content-type": "application/x-www-form-urlencoded"
+                        },
+                        form: data
+                    }, function(error,response,body) {
+                        if (error) {
+                            console.log("[-] Unable to post log record:");
+                            console.log(error);
+                            next(error,response);
+                        } else {
+                            next(null,response);
+                        }
+                    });
+                }).on('data',function(data){
+                }).on('error',function(error) {
+                    console.log('[-] processed error : '+JSON.stringify(error))
+                }).on('end',function() {
+                    next(null)
+                })
+                bufferStream.pipe(csvParser)
             }
         ], 
         function (err) {
