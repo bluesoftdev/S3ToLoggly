@@ -56,26 +56,26 @@ var csvCFParserConfig = {
         headers: [
             'date',
             'time',
-            'ip',
-            'method',
-            'host',
-            'uri',
-            'status',
-            'referer',
-            'user-agent',
-            'query',
-            'cookie',
-            'protocol',
-            'object-size',
-            'bytes-sent',
-            'time-taken-ms',
-            'ssl-protocol',
-            'ssl-cipher',
+            'x-edge-location',
+            'sc-bytes',
+            'c-ip',
+            'cs-method',
+            'cs(Host)',
+            'cs-uri-stem',
+            'sc-status',
+            'cs(Referer)',
+            'cs(User-Agent)',
+            'cs-uri-query',
+            'cs(Cookie)',
             'x-edge-result-type',
             'x-edge-request-id',
             'x-host-header',
+            'cs-protocol',
+            'cs-bytes',
+            'time-taken',
             'x-forwarded-for',
-            'x-edge-location',
+            'ssl-protocol',
+            'ssl-cipher',
             'x-edge-response-result-type'
         ]
     }
@@ -106,8 +106,8 @@ var csvS3ParserConfig = {
 function replaceDashesWithNulls(data) {
     for(var key in data) {
         if (data.hasOwnProperty(key)) {
-            if (data[key] == '-') {
-                delete data[key]
+            if (data[key] === '-') {
+                data[key] = null
             }
         }
     }
@@ -132,9 +132,9 @@ var transformS3 = function(data) {
 var transformCF = function(data) {
     data = replaceDashesWithNulls(data)
     // Convert some fields to integer.
-    data["time-taken-ms"] = parseInt(data["time-taken-ms"], 10);
-    data["object-size"] = parseInt(data["object-size"], 10);
-    data["bytes-sent"] = parseInt(data["bytes-sent"], 10);
+    data["time-taken"] = parseInt(data["time-taken"], 10);
+    data["cs-bytes"] = parseInt(data["cs-bytes"], 10);
+    data["sc-bytes"] = parseInt(data["sc-bytes"], 10);
     return data;
 }
 exports.handler = function(event, context) {
@@ -227,6 +227,7 @@ exports.handler = function(event, context) {
                         },
                         form: data
                     }, function(error,response,body) {
+                        console.log('[+] post complete('+error+','+response+','+body+')')
                         if (error) {
                             console.log("[-] Unable to post log record:");
                             console.log(error);
