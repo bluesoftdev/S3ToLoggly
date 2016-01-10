@@ -126,7 +126,6 @@ var transformS3 = function(data) {
     if (data['object-size']) data['object-size'] = parseInt(data['object-size'],10);
     if (data['total-time-ms']) data['total-time-ms'] = parseInt(data['total-time-ms'],10);
     if (data['turn-around-time-ms']) data['turn-around-time-ms'] = parseInt(data['turn-around-time-ms'],10);
-
     return data
 }
 var transformCF = function(data) {
@@ -135,6 +134,7 @@ var transformCF = function(data) {
     data["time-taken"] = parseInt(data["time-taken"], 10);
     data["cs-bytes"] = parseInt(data["cs-bytes"], 10);
     data["sc-bytes"] = parseInt(data["sc-bytes"], 10);
+    if (data['cs(User-Agent)']) data['cs(User-Agent)'] = decodeURI(decodeURI(data['cs(User-Agent)']))
     return data;
 }
 exports.handler = function(event, context) {
