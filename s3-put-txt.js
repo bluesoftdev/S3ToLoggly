@@ -27,9 +27,9 @@ module.exports = {
           "arn": "arn:aws:s3:::hosting.dhptech.com.website.logs"
         },
         "object": {
-          "key": "logs/origin.computersfearme.com/2015-12-10-18-21-37-305182AFE8DEFDDB",
-          "size": 741,
-          "eTag": "22e13822e548db3abfd2d8d242c5bf4f"
+          "key": "logs/origin.computersfearme.com/2016-01-08-22-49-24-5A52831B8156E694",
+          "size": 259,
+          "eTag": "52dfc009c61264a5958a662a6d1654a4"
         }
       }
     }

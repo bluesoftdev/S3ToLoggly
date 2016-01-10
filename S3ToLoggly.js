@@ -84,7 +84,7 @@ var csvS3ParserConfig = {
     headers: [
       'bucket-owner-id',
       'bucket',
-      'time',
+      'timestamp',
       'time-zone',
       'requestor-ip',
       'requestor-id',
@@ -116,10 +116,10 @@ function replaceDashesWithNulls(data) {
 var transformS3 = function(data) {
     data = replaceDashesWithNulls(data)
     // parse the time and timezone parts and convert to one date
-    var timeParts = data['time'].substring(1)
+    var timeParts = data['timestamp'].substring(1)
     var timeZone = data['time-zone'].substring(0,data['time-zone'].length - 1)
     var timeStr = timeParts + ' ' + timeZone
-    data['time'] = moment(timeStr,'DD/MMM/YYYY:HH:mm:ss Z').format()
+    data['timestamp'] = moment(timeStr,'DD/MMM/YYYY:HH:mm:ss Z').format()
     data['time-zone'] = null
     if (data['http-status']) data['http-status'] = parseInt(data['http-status'],10);
     if (data['bytes-sent']) data['bytes-sent'] = parseInt(data['bytes-sent'],10);
@@ -223,11 +223,10 @@ exports.handler = function(event, context) {
                     request.post({
                         url: LOGGLY_URL,
                         headers: {
-                          "content-type": "application/x-www-form-urlencoded"
+                          "content-type": "application/json"
                         },
-                        form: data
+                        form: JSON.stringify(data)
                     }, function(error,response,body) {
-                        console.log('[+] post complete('+error+','+response+','+body+')')
                         if (error) {
                             console.log("[-] Unable to post log record:");
                             console.log(error);
