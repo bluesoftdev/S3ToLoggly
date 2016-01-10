@@ -135,6 +135,11 @@ var transformCF = function(data) {
     data["cs-bytes"] = parseInt(data["cs-bytes"], 10);
     data["sc-bytes"] = parseInt(data["sc-bytes"], 10);
     if (data['cs(User-Agent)']) data['cs(User-Agent)'] = decodeURI(decodeURI(data['cs(User-Agent)']))
+    if (data['time'] && data['date']) {
+        data['timestamp'] = data['date']+'T'+data['time']
+        delete data['time']
+        delete data['date']
+    }
     return data;
 }
 exports.handler = function(event, context) {
@@ -220,12 +225,11 @@ exports.handler = function(event, context) {
 
                 csvParser.transform(function(data,next) {
                     data = transform(data)
+                    console.log("[+] sending log event: "+JSON.stringify(data))
                     request.post({
                         url: LOGGLY_URL,
-                        headers: {
-                          "content-type": "application/json"
-                        },
-                        form: JSON.stringify(data)
+                        json: true,
+                        body: data
                     }, function(error,response,body) {
                         if (error) {
                             console.log("[-] Unable to post log record:");
