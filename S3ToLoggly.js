@@ -76,7 +76,8 @@ var csvCFParserConfig = {
             'x-forwarded-for',
             'ssl-protocol',
             'ssl-cipher',
-            'x-edge-response-result-type'
+            'x-edge-response-result-type',
+            'cs-protocol-version'
         ]
     }
 var csvS3ParserConfig = {
@@ -202,7 +203,6 @@ exports.handler = function(event, context) {
 
             function gunzipStep(data, next) {
                 if (key.match(/^.*\.gz$/)) {
-                  console.log('gunzipping content')
                   gunzip(data.Body,next)
                 } else {
                   next(null,data.Body)
@@ -210,12 +210,11 @@ exports.handler = function(event, context) {
             },
 
             function upload(data, next) {
-
                 // Stream the logfile to loggly.
                 var bufferStream = new Transform();
                 bufferStream.push(data)
                 bufferStream.end()
-                console.log( 'Using Loggly endpoint: ' + LOGGLY_URL )
+                //console.log( 'Using Loggly endpoint: ' + LOGGLY_URL )
                 var csvParser = csv(csvS3ParserConfig)
                 var transform = transformS3
                 if (key.match(/^.*\.gz$/)) {
@@ -225,7 +224,6 @@ exports.handler = function(event, context) {
 
                 csvParser.transform(function(data,next) {
                     data = transform(data)
-                    console.log("[+] sending log event: "+JSON.stringify(data))
                     request.post({
                         url: LOGGLY_URL,
                         json: true,
@@ -241,7 +239,7 @@ exports.handler = function(event, context) {
                     });
                 }).on('data',function(data){
                 }).on('error',function(error) {
-                    console.log('[-] processed error : '+JSON.stringify(error))
+                    console.log('[-] processed error : '+error)
                 }).on('end',function() {
                     next(null)
                 })
