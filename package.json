@@ -7,7 +7,7 @@
     "url": "git@github.com:psquickitjayant/S3ToLoggly.git"
   },
   "devDependencies": {},
-  "engine": "node >= 0.10",
+  "engine": "node >= 4.3",
   "dependencies": {
     "async": "^1.5.2",
     "aws-sdk": "^2.2.28",
